@@ -263,19 +263,34 @@ def get_weather():
 
 
 
-# ---------- rahastot (Yahoo Finance, Morningstarin arvot) ----------
+# ---------- rahastot (Morningstar, varalla Yahoo Finance) ----------
+# Sivu hakee rahastojen arvot ensisijaisesti itse suoraan Morningstarista;
+# tämä tiedosto (data/funds.json) on varalla, jos selainhaku ei onnistu.
 FUNDS = [
-    ("OP-Eurooppa Indeksi A", "0P0000UP8X.F"),
-    ("OP-Pohjoismaat Indeksi A", "0P0000UBBU.F"),
-    ("OP-Suomi Indeksi A", "0P0001DHRI.F"),
+    ("OP-Eurooppa Indeksi A", "0P0000UP8X"),
+    ("OP-Pohjoismaat Indeksi A", "0P0000UBBU"),
+    ("OP-Suomi Indeksi A", "0P0001DHRI"),
 ]
+
+
+def _morningstar(symbol):
+    start = (datetime.now(TZ).date() - timedelta(days=366)).isoformat()
+    url = ("https://lt.morningstar.com/api/rest.svc/timeseries_price/9vehuxllxs"
+           f"?id={symbol}%5D2%5D0%5DFOFIN%24%24ALL&currencyId=EUR&idtype=Morningstar"
+           f"&frequency=daily&startDate={start}&outputType=COMPACTJSON")
+    rows = json.loads(fetch_retry(url))
+    out = {datetime.fromtimestamp(ms / 1000, timezone.utc).date().isoformat(): round(v, 4)
+           for ms, v in rows if v is not None}
+    if not out:
+        raise RuntimeError("tyhjä vastaus")
+    return out
 
 
 def _yahoo(symbol):
     last_err = None
     for host in ("query1", "query2"):
         try:
-            url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}"
+            url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}.F"
                    "?range=1y&interval=1d")
             r = json.loads(fetch_retry(url))["chart"]["result"][0]
             closes = r["indicators"]["quote"][0]["close"]
@@ -303,7 +318,10 @@ def get_funds():
     funds, errors = [], []
     for name, symbol in FUNDS:
         try:
-            series = _yahoo(symbol)
+            try:
+                series = _morningstar(symbol)
+            except Exception:
+                series = _yahoo(symbol)
             dates = sorted(series)
             funds.append({"name": name, "symbol": symbol, "dates": dates,
                           "values": [series[d] for d in dates]})
