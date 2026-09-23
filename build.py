@@ -10,6 +10,7 @@ import html
 import json
 import os
 import sys
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -123,39 +124,124 @@ def get_news():
 
 
 # ---------- pörssisähkö (Nord Pool, hinta-alue FI) ----------
+# Ensisijainen lähde on Nord Poolin oma rajapinta. Jos se ei vastaa, samat Nord Poolin
+# Suomen hinnat haetaan Eleringin (Viron kantaverkkoyhtiö) rajapinnasta. Jos nekin
+# puuttuvat, käytetään edellisen onnistuneen haun hintoja, ettei graafi tyhjene.
+PREV_PRICE_URL = os.environ.get("PREV_PRICE_URL", "")
+
+
+def fetch_retry(url, tries=3, timeout=30):
+    for n in range(tries):
+        try:
+            return fetch(url, timeout=timeout)
+        except Exception:
+            if n == tries - 1:
+                raise
+            time.sleep(4 * (n + 1))
+
+
+def _nordpool_day(d):
+    url = ("https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices"
+           f"?date={d.isoformat()}&market=DayAhead&deliveryArea=FI&currency=EUR")
+    raw = fetch_retry(url)
+    if not raw:
+        return []  # päivän hintoja ei ole vielä julkaistu
+    out = []
+    for e in json.loads(raw).get("multiAreaEntries", []):
+        eur_mwh = e.get("entryPerArea", {}).get("FI")
+        if eur_mwh is None:
+            continue
+        s = datetime.fromisoformat(e["deliveryStart"].replace("Z", "+00:00"))
+        t = datetime.fromisoformat(e["deliveryEnd"].replace("Z", "+00:00"))
+        out.append((s, t, eur_mwh))
+    return out
+
+
+def _elering(start, end):
+    fmt = lambda d: d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    url = f"https://dashboard.elering.ee/api/nps/price?start={fmt(start)}&end={fmt(end)}"
+    rows = json.loads(fetch_retry(url)).get("data", {}).get("fi", [])
+    rows = sorted(rows, key=lambda r: r["timestamp"])
+    out = []
+    for i, r in enumerate(rows):
+        s = datetime.fromtimestamp(r["timestamp"], timezone.utc)
+        if i + 1 < len(rows):
+            t = datetime.fromtimestamp(rows[i + 1]["timestamp"], timezone.utc)
+        else:
+            t = s + (out[-1][1] - out[-1][0] if out else timedelta(minutes=15))
+        out.append((s, t, r["price"]))
+    return out
+
+
+def _point(s, t, eur_mwh):
+    c_kwh = eur_mwh / 10.0                 # €/MWh → c/kWh
+    if c_kwh > 0:                          # ALV lisätään vain positiiviseen hintaan
+        c_kwh *= 1 + VAT
+    return {"start": s.astimezone(TZ).isoformat(),
+            "minutes": int((t - s).total_seconds() // 60),
+            "price": round(c_kwh, 3)}
+
+
+def _covers(points, a, b):
+    """Kattavatko hinnat aikavälin a–b aukottomasti?"""
+    t = a
+    for k in sorted(points):
+        if k > t:
+            return False
+        end = k + timedelta(minutes=points[k]["minutes"])
+        if end > t:
+            t = end
+        if t >= b:
+            return True
+    return t >= b
+
+
 def get_price():
     today = datetime.now(TZ).date()
-    points, errors = {}, []
-    # Nord Poolin toimituspäivä on CET-päivä; haetaan eilinen–huominen,
-    # jotta Suomen vuorokausi tulee kokonaan mukaan.
-    for d in (today - timedelta(days=1), today, today + timedelta(days=1)):
-        url = ("https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices"
-               f"?date={d.isoformat()}&market=DayAhead&deliveryArea=FI&currency=EUR")
-        try:
-            raw = fetch(url)
-            if not raw:
-                continue  # huomisen hinnat eivät vielä julkaistu
-            data = json.loads(raw)
-            for e in data.get("multiAreaEntries", []):
-                eur_mwh = e.get("entryPerArea", {}).get("FI")
-                if eur_mwh is None:
-                    continue
-                start = datetime.fromisoformat(e["deliveryStart"].replace("Z", "+00:00"))
-                end = datetime.fromisoformat(e["deliveryEnd"].replace("Z", "+00:00"))
-                c_kwh = eur_mwh / 10.0            # €/MWh → c/kWh
-                if c_kwh > 0:                      # ALV lisätään vain positiiviseen hintaan
-                    c_kwh *= 1 + VAT
-                points[start] = {
-                    "start": start.astimezone(TZ).isoformat(),
-                    "minutes": int((end - start).total_seconds() // 60),
-                    "price": round(c_kwh, 3),
-                }
-        except Exception as e:
-            errors.append(f"{d}: {e}")
-    # näytetään kuluvan päivän alusta eteenpäin (Suomen aikaa)
     day_start = datetime.combine(today, datetime.min.time(), TZ)
-    series = [points[k] for k in sorted(points) if k >= day_start]
-    return {"points": series, "vat": VAT, "errors": errors}
+    tomorrow = day_start + timedelta(days=1)
+    window_end = day_start + timedelta(days=2)
+    points, problems, source = {}, [], "Nord Pool"
+
+    # 1) Nord Pool (toimituspäivä on CET-päivä → eilinen, tänään, huominen)
+    for d in (today - timedelta(days=1), today, today + timedelta(days=1)):
+        try:
+            for s, t, v in _nordpool_day(d):
+                points[s] = _point(s, t, v)
+        except Exception as e:
+            problems.append(f"Nord Pool {d}: {e}")
+
+    # 2) Elering, jos tämän päivän hinnoissa on aukkoja (tai huominen jäi hakematta)
+    if problems or not _covers(points, day_start, tomorrow):
+        try:
+            added = 0
+            for s, t, v in _elering(day_start, window_end):
+                if s not in points:
+                    points[s] = _point(s, t, v)
+                    added += 1
+            if added:
+                source = "Nord Pool / Elering"
+        except Exception as e:
+            problems.append(f"Elering: {e}")
+
+    # 3) Edellinen onnistunut haku, jos tänään on yhä aukkoja
+    if not _covers(points, day_start, tomorrow) and PREV_PRICE_URL:
+        try:
+            prev = json.loads(fetch_retry(PREV_PRICE_URL + f"?t={int(time.time())}", tries=2))
+            for p in prev.get("points", []):
+                s = datetime.fromisoformat(p["start"])
+                if s >= day_start and s not in points:
+                    points[s] = p
+        except Exception as e:
+            problems.append(f"edellinen haku: {e}")
+
+    series = [points[k] for k in sorted(points) if day_start <= k < window_end]
+    ok_today = _covers(points, day_start, tomorrow)
+    for p in problems:
+        print("  hinta:", p)
+    return {"points": series, "vat": VAT, "source": source,
+            # sivulle näytetään virhe vain, jos tämän päivän hinnoista puuttuu jotain
+            "errors": [] if ok_today else (problems or ["tämän päivän hinnoissa on aukkoja"])}
 
 
 # ---------- sää (Open-Meteo, Lahti) ----------
