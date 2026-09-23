@@ -263,13 +263,66 @@ def get_weather():
 
 
 
+# ---------- rahastot (Yahoo Finance, Morningstarin arvot) ----------
+FUNDS = [
+    ("OP-Eurooppa Indeksi A", "0P0000UP8X.F"),
+    ("OP-Pohjoismaat Indeksi A", "0P0000UBBU.F"),
+    ("OP-Suomi Indeksi A", "0P0001DHRI.F"),
+]
+
+
+def _yahoo(symbol):
+    last_err = None
+    for host in ("query1", "query2"):
+        try:
+            url = (f"https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}"
+                   "?range=1y&interval=1d")
+            r = json.loads(fetch_retry(url))["chart"]["result"][0]
+            closes = r["indicators"]["quote"][0]["close"]
+            out = {}
+            for ts, v in zip(r["timestamp"], closes):
+                if v is not None:
+                    out[datetime.fromtimestamp(ts, TZ).date().isoformat()] = round(v, 4)
+            if out:
+                return out
+            last_err = "tyhjä vastaus"
+        except Exception as e:
+            last_err = e
+    raise RuntimeError(last_err)
+
+
+def get_funds():
+    prev = {}
+    if PREV_PRICE_URL:  # edellinen onnistunut haku varalle
+        try:
+            base = PREV_PRICE_URL.rsplit("/", 1)[0]
+            old = json.loads(fetch_retry(f"{base}/funds.json?t={int(time.time())}", tries=2))
+            prev = {f["symbol"]: f for f in old.get("funds", [])}
+        except Exception:
+            pass
+    funds, errors = [], []
+    for name, symbol in FUNDS:
+        try:
+            series = _yahoo(symbol)
+            dates = sorted(series)
+            funds.append({"name": name, "symbol": symbol, "dates": dates,
+                          "values": [series[d] for d in dates]})
+        except Exception as e:
+            if symbol in prev:
+                funds.append(prev[symbol])
+            else:
+                errors.append(f"{name}: {e}")
+    return {"funds": funds, "errors": errors}
+
+
 # ---------- kirjoitus ----------
 def main(out_dir):
     data_dir = os.path.join(out_dir, "data")
     os.makedirs(data_dir, exist_ok=True)
     generated = datetime.now(timezone.utc).isoformat()
     failed = []
-    for name, fn in (("news", get_news), ("price", get_price), ("weather", get_weather)):
+    for name, fn in (("news", get_news), ("price", get_price), ("weather", get_weather),
+                     ("funds", get_funds)):
         try:
             payload = fn()
         except Exception as e:
