@@ -30,6 +30,8 @@ jobs:
           python-version: "3.12"
 
       - name: Hae uutiset, sähkön hinta ja sää
+        env:
+          PREV_PRICE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/price.json
         run: |
           mkdir -p _site
           cp index.html _site/
