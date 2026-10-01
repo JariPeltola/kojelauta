@@ -11,6 +11,7 @@
     --yle: #00a0b4; --il: #d6001c; --is: #e0a100; --vu: #0b3d91;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -18,7 +19,7 @@
            padding: 14px 20px 6px; }
   header h1 { font-size: 20px; margin: 0; font-weight: 650; }
   #clock { color: var(--muted); font-variant-numeric: tabular-nums; }
-  main { display: grid; grid-template-columns: 60% 1fr; gap: 16px;
+  main { display: grid; grid-template-columns: 4fr 3fr 3fr; gap: 16px;
          padding: 8px 20px 20px; height: calc(100vh - 52px); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
           padding: 12px 16px; min-height: 0; min-width: 0; }
@@ -50,6 +51,37 @@
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
               margin-right: 5px; vertical-align: -1px; }
   .err { color: #b91c1c; font-size: 12px; }
+  /* kamerat */
+  #cams { display: flex; flex-direction: column; }
+  #cams h2 button { margin-left: auto; border: 0; background: none; cursor: pointer;
+                    font-size: 16px; color: var(--muted); padding: 0 2px; }
+  #cams h2 button:hover { color: var(--text); }
+  #cams-grid { flex: 1; overflow-y: auto; display: grid; gap: 10px; align-content: start;
+               grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .cam { position: relative; margin: 0; border-radius: 8px; overflow: hidden;
+         background: #111827; aspect-ratio: 16 / 9; cursor: zoom-in; }
+  .cam img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cam figcaption { position: absolute; left: 0; right: 0; bottom: 0; display: flex;
+                    justify-content: space-between; gap: 8px; padding: 14px 8px 5px;
+                    font-size: 12px; color: #fff;
+                    background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+  .cam figcaption time { font-variant-numeric: tabular-nums; opacity: .85; }
+  .cam.stale figcaption time { color: #fca5a5; opacity: 1; }
+  .cam .msg { position: absolute; inset: 0; display: grid; place-items: center;
+              color: #9ca3af; font-size: 12px; text-align: center; padding: 10px; }
+  #cams-form { display: grid; gap: 8px; font-size: 13px; }
+  #cams-form label { display: grid; gap: 3px; color: var(--muted); }
+  #cams-form input { font: inherit; color: var(--text); padding: 6px 8px;
+                     border: 1px solid var(--line); border-radius: 6px; }
+  #cams-form .row { display: flex; gap: 8px; }
+  #cams-form button { font: inherit; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+                      border: 1px solid var(--line); background: var(--card); }
+  #cams-form button[type=submit] { background: var(--link); color: #fff; border-color: var(--link); }
+  #cams-form p { margin: 0; color: var(--muted); font-size: 12px; }
+  #cam-big { padding: 0; border: 0; background: #000; max-width: 96vw; max-height: 94vh; }
+  #cam-big::backdrop { background: rgba(0,0,0,.8); }
+  #cam-big img { display: block; max-width: 96vw; max-height: 90vh; cursor: zoom-out; }
+  #cam-big p { margin: 0; color: #fff; font-size: 13px; padding: 6px 10px; }
   @media (max-width: 900px) {
     main { grid-template-columns: 1fr; height: auto; }
     .charts { grid-template-rows: auto auto auto; }
@@ -98,7 +130,30 @@
       <div class="legend" id="funds-legend"></div>
     </section>
   </div>
+  <section class="card" id="cams">
+    <h2>Kamerat <small id="cams-info"></small>
+      <button type="button" id="cams-cfg" title="Kameroiden asetukset">⚙</button></h2>
+    <div class="err" id="cams-err"></div>
+    <form id="cams-form" hidden>
+      <label>Home Assistantin osoite (https)
+        <input name="url" type="url" placeholder="https://koti.example.fi" required></label>
+      <label>Pitkäikäinen tunnus (long-lived access token)
+        <input name="token" type="password" autocomplete="off" required></label>
+      <label>Kamerat (tyhjä = kaikki), pilkuilla erotettuna
+        <input name="ids" placeholder="camera.etupiha, camera.piha"></label>
+      <label>Päivitysväli, sekuntia
+        <input name="every" type="number" min="2" max="300" value="5"></label>
+      <p>Tiedot tallentuvat vain tämän selaimen muistiin, eivät GitHubiin.</p>
+      <div class="row">
+        <button type="submit">Tallenna</button>
+        <button type="button" id="cams-cancel">Peruuta</button>
+        <button type="button" id="cams-forget" style="margin-left:auto">Unohda</button>
+      </div>
+    </form>
+    <div id="cams-grid"></div>
+  </section>
 </main>
+<dialog id="cam-big"><img alt=""><p></p></dialog>
 
 <script>
 const REFRESH_MS = 10 * 60 * 1000;          // päivitys 10 minuutin välein
@@ -411,6 +466,134 @@ async function loadFunds() {
   } catch (e) { err.textContent = "Rahastotietojen haku epäonnistui: " + e.message; }
 }
 
+// ---------- kamerat (Home Assistant) ----------
+// HA:n osoite ja tunnus syötetään ⚙-asetuksista ja tallennetaan vain selaimen
+// localStorageen, joten ne eivät koskaan päädy julkiseen repoon.
+const CAM_KEY = "kojelauta-ha";
+const camEls = {
+  grid: document.getElementById("cams-grid"), err: document.getElementById("cams-err"),
+  info: document.getElementById("cams-info"), form: document.getElementById("cams-form"),
+  big: document.getElementById("cam-big"),
+};
+let camCfg = null, cams = [], camTimer = null, camBig = null;
+try { camCfg = JSON.parse(localStorage.getItem(CAM_KEY)); } catch (e) {}
+
+const haUrl = path => camCfg.url.replace(/\/+$/, "") + path;
+async function haFetch(path) {
+  let r;
+  try {
+    r = await fetch(haUrl(path), { headers: { Authorization: "Bearer " + camCfg.token }, cache: "no-store" });
+  } catch (e) {
+    if (location.protocol === "https:" && camCfg.url.startsWith("http:"))
+      throw new Error("selain estää http-osoitteen https-sivulta, HA tarvitsee https-osoitteen");
+    throw new Error("ei yhteyttä Home Assistantiin (onko https ja cors_allowed_origins kunnossa?)");
+  }
+  if (r.status === 401) throw new Error("tunnus ei kelpaa (401)");
+  if (!r.ok) throw new Error(r.status + " " + r.statusText);
+  return r;
+}
+
+function camForm(show) {
+  camEls.form.hidden = !show;
+  camEls.grid.hidden = show;
+  if (!show) return;
+  const f = camEls.form.elements;
+  f.url.value = camCfg?.url || ""; f.token.value = camCfg?.token || "";
+  f.ids.value = (camCfg?.ids || []).join(", "); f.every.value = camCfg?.every || 5;
+}
+
+async function startCams() {
+  clearInterval(camTimer); camTimer = null;
+  cams.forEach(c => c.url && URL.revokeObjectURL(c.url));
+  cams = []; camEls.grid.innerHTML = ""; camEls.err.textContent = ""; camEls.info.textContent = "";
+  if (!camCfg) { camEls.info.textContent = "ei asetettu"; camForm(true); return; }
+  camForm(false);
+  try {
+    const states = await (await haFetch("/api/states")).json();
+    const want = camCfg.ids || [];
+    const found = states.filter(s => s.entity_id.startsWith("camera.") &&
+                                     (!want.length || want.includes(s.entity_id)));
+    if (want.length) found.sort((a, b) => want.indexOf(a.entity_id) - want.indexOf(b.entity_id));
+    const missing = want.filter(id => !found.some(s => s.entity_id === id));
+    if (!found.length) throw new Error("Home Assistantista ei löytynyt kameroita");
+    cams = found.map(s => {
+      const fig = document.createElement("figure");
+      fig.className = "cam";
+      fig.innerHTML = `<div class="msg">ladataan…</div><img alt="" hidden>` +
+        `<figcaption><span>${esc(s.attributes.friendly_name || s.entity_id)}</span><time></time></figcaption>`;
+      camEls.grid.append(fig);
+      const cam = { id: s.entity_id, name: s.attributes.friendly_name || s.entity_id,
+                    fig, img: fig.querySelector("img"), msg: fig.querySelector(".msg"),
+                    time: fig.querySelector("time"), url: null, ok: 0, busy: false };
+      fig.addEventListener("click", () => openBig(cam));
+      return cam;
+    });
+    camEls.info.textContent = `${cams.length} kpl · ${camCfg.every || 5} s välein`;
+    if (missing.length) camEls.err.textContent = "Ei löytynyt: " + missing.join(", ");
+    refreshCams();
+    camTimer = setInterval(refreshCams, (camCfg.every || 5) * 1000);
+  } catch (e) { camEls.err.textContent = "Kamerat: " + e.message; }
+}
+
+async function refreshCam(cam) {
+  if (cam.busy) return;               // edellinen kuva vielä tulossa
+  cam.busy = true;
+  try {
+    const blob = await (await haFetch(`/api/camera_proxy/${cam.id}?t=${Date.now()}`)).blob();
+    const old = cam.url;
+    cam.url = URL.createObjectURL(blob);
+    cam.img.src = cam.url; cam.img.hidden = false; cam.msg.hidden = true;
+    if (camBig === cam) camEls.big.querySelector("img").src = cam.url;
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 1000);
+    cam.ok = Date.now();
+    cam.time.textContent = new Date(cam.ok).toLocaleTimeString("fi-FI");
+    cam.fig.classList.remove("stale");
+    cam.img.title = "";
+  } catch (e) {
+    if (!cam.ok) { cam.msg.textContent = e.message; cam.msg.hidden = false; }
+    cam.img.title = "Viimeisin haku epäonnistui: " + e.message;
+  } finally { cam.busy = false; }
+}
+
+function refreshCams() {
+  if (document.hidden) return;        // ei haeta kuvia taustalla olevaan välilehteen
+  const every = (camCfg?.every || 5) * 1000;
+  for (const cam of cams) {
+    refreshCam(cam);
+    if (cam.ok) cam.fig.classList.toggle("stale", Date.now() - cam.ok > 3 * every + 2000);
+  }
+}
+
+function openBig(cam) {
+  if (!cam.url) return;
+  camBig = cam;
+  camEls.big.querySelector("img").src = cam.url;
+  camEls.big.querySelector("p").textContent = cam.name;
+  camEls.big.showModal();
+}
+camEls.big.addEventListener("click", () => camEls.big.close());
+camEls.big.addEventListener("close", () => { camBig = null; });
+
+document.getElementById("cams-cfg").addEventListener("click", () => camForm(camEls.form.hidden));
+document.getElementById("cams-cancel").addEventListener("click", () => camCfg ? camForm(false) : null);
+document.getElementById("cams-forget").addEventListener("click", () => {
+  try { localStorage.removeItem(CAM_KEY); } catch (e) {}
+  camCfg = null; startCams();
+});
+camEls.form.addEventListener("submit", ev => {
+  ev.preventDefault();
+  const f = camEls.form.elements;
+  camCfg = {
+    url: f.url.value.trim(), token: f.token.value.trim(),
+    ids: f.ids.value.split(/[\s,]+/).filter(Boolean),
+    every: Math.min(300, Math.max(2, +f.every.value || 5)),
+  };
+  try { localStorage.setItem(CAM_KEY, JSON.stringify(camCfg)); }
+  catch (e) { camEls.err.textContent = "Selain ei salli tallennusta, asetukset unohtuvat sivun latauksessa."; }
+  startCams();
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshCams(); });
+
 // ---------- ajastus ----------
 function tick() {
   document.getElementById("clock").textContent =
@@ -424,6 +607,7 @@ new ResizeObserver(() => { renderPrice(); renderWeather(); renderFunds(); })
 tick(); setInterval(tick, 15000);
 setInterval(renderPrice, 60000);   // "nyt"-merkki liikkuu minuutin välein
 refreshAll(); setInterval(refreshAll, REFRESH_MS);
+startCams();
 </script>
 </body>
 </html>
