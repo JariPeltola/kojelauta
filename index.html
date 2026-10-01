@@ -647,7 +647,23 @@ new ResizeObserver(() => { renderPrice(); renderWeather(); renderFunds(); })
 tick(); setInterval(tick, 15000);
 setInterval(renderPrice, 60000);   // "nyt"-merkki liikkuu minuutin välein
 refreshAll(); setInterval(refreshAll, REFRESH_MS);
-startCams();
+// Julkiset kamerakuvat: Home Assistant tallentaa ne 5 s välein
+const PUBLIC_CAMS = [["Etupiha", "etupiha"], ["Etuovi", "etuovi"], ["Takapiha", "takapiha"]];
+const PUB_BASE = "https://ha.jarippeltola.com/local/kojelauta/";
+camEls.grid.innerHTML = PUBLIC_CAMS.map(([n, f]) =>
+  `<figure class="cam"><img alt="${n}" data-f="${f}"><figcaption><span>${n}</span><time></time></figcaption></figure>`).join("");
+function refreshPub() {
+  if (document.hidden) return;
+  camEls.grid.querySelectorAll("img").forEach(img => {
+    const im = new Image();
+    im.onload = () => {
+      img.src = im.src;
+      img.nextElementSibling.querySelector("time").textContent = new Date().toLocaleTimeString("fi-FI");
+    };
+    im.src = PUB_BASE + img.dataset.f + ".jpg?t=" + Date.now();
+  });
+}
+refreshPub(); setInterval(refreshPub, 5000);
 </script>
 </body>
 </html>
