@@ -9,7 +9,7 @@ Sivun jako: uutiset 40 % · tilastot 30 % · kamerat 30 %.
 ## Miten tämä toimii
 
 - `index.html` on itse sivu. GitHub Pages julkaisee sen osoitteeseen
-  `https://<käyttäjätunnus>.github.io/<repon-nimi>/`.
+  **https://jarippeltola.com/kojelauta/** (oma verkkotunnus, ks. alla).
 - `.github/workflows/paivita.yml` ajaa `build.py`:n 10 minuutin välein. Se hakee uutiset
   ja sähkön hinnat tiedostoihin `data/*.json` ja julkaisee sivun uudelleen.
   (Selain ei saa hakea uutissyötteitä suoraan toisilta sivustoilta, siksi tämä välivaihe.)
@@ -39,10 +39,38 @@ Kamerakuvat haetaan selaimessa suoraan Home Assistantista (`/api/camera_proxy/<k
 HA:n osoite ja tunnus syötetään sivun **⚙**-painikkeesta, ja ne tallentuvat vain kyseisen
 selaimen muistiin (localStorage). Repoon ei kirjoiteta mitään salaista.
 
+### Oma verkkotunnus jarippeltola.com
+
+Verkkotunnus on Cloudflaressa. Sivu näkyy osoitteessa `jarippeltola.com/kojelauta`, koska
+oma verkkotunnus on asetettu GitHubin *käyttäjäsivulle* (repo `jaripeltola.github.io`):
+silloin kaikki projektisivut, myös tämä, näkyvät polkuna sen alla.
+
+1. GitHubissa julkinen repo **`jaripeltola.github.io`**, jossa on `index.html` (etusivu).
+2. Sen repon **Settings → Pages → Custom domain**: `jarippeltola.com` → Save,
+   ja kun sertifikaatti on valmis, **Enforce HTTPS**.
+3. Cloudflare → jarippeltola.com → **DNS → Records**, kaikki tilassa *DNS only* (harmaa pilvi):
+
+   | Tyyppi | Nimi | Arvo |
+   |---|---|---|
+   | A | `@` | 185.199.108.153 |
+   | A | `@` | 185.199.109.153 |
+   | A | `@` | 185.199.110.153 |
+   | A | `@` | 185.199.111.153 |
+   | CNAME | `www` | jaripeltola.github.io |
+
+Vanha osoite `jaripeltola.github.io/kojelauta` ohjautuu tämän jälkeen automaattisesti uuteen.
+
 ### 1. HTTPS-osoite Home Assistantille
 
 GitHub Pages on https-sivu, ja selain estää siltä yhteydet `http://`-osoitteisiin.
 HA tarvitsee siis https-osoitteen, joka toimii myös kodin ulkopuolelta. Vaihtoehdot:
+
+Käytössä: **Cloudflare Tunnel**, osoite `https://ha.jarippeltola.com`. HA:ssa
+lisäosa *Cloudflared* (repo `https://github.com/homeassistant-apps/app-cloudflared`),
+asetus `external_hostname: ha.jarippeltola.com`. Ensimmäisellä käynnistyksellä
+lokin linkistä hyväksytään yhteys Cloudflareen.
+
+Muut vaihtoehdot:
 
 | Tapa | Hinta | Porttien avaus reitittimeen | Vaivattomuus |
 |---|---|---|---|
@@ -64,7 +92,7 @@ Lisää `configuration.yaml`:iin (samaan `http:`-lohkoon, jos sellainen on jo) j
 ```yaml
 http:
   cors_allowed_origins:
-    - https://jaripeltola.github.io
+    - https://jarippeltola.com
 ```
 
 ### 3. Tunnus
@@ -75,7 +103,7 @@ käyttöoikeustunnukset** → Luo tunnus. Kopioi tunnus Kojelaudan ⚙-asetuksii
 
 ### 4. Asetukset sivulla
 
-- **Osoite:** esim. `https://xxxxx.ui.nabu.casa`
+- **Osoite:** `https://ha.jarippeltola.com`
 - **Kamerat:** tyhjä = kaikki `camera.`-entiteetit, tai luettelo halutussa järjestyksessä,
   esim. `camera.etupiha, camera.piha`
 - **Päivitysväli:** oletus 5 s. Kuvia ei haeta, kun välilehti on taustalla.
