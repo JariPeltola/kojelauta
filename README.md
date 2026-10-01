@@ -39,18 +39,16 @@ Kojelauta yhdistää selaimesta suoraan Home Assistantiin websocket-yhteydellä 
 kamerakuvat HA:n allekirjoittamilla, minuutin voimassa olevilla linkeillä. HA:han ei
 tarvita lisäosia eikä `configuration.yaml`-muutoksia.
 
+HA on internetissä osoitteessa **https://ha.jarippeltola.com** (Cloudflare Tunnel, HA-sovellus
+*Cloudflared*). HA:ssa: Asetukset → Järjestelmä → Verkko → HTTP-palvelin → Käänteinen
+välityspalvelin: *Luota X-Forwarded-For* päällä ja luotettu verkko `172.30.33.0/24`.
+
 **Käyttöönotto:**
-1. HA:ssa: oma profiili (vasen alakulma) → **Suojaus** → **Pitkäikäiset käyttöoikeustunnukset**
-   → **Luo tunnus** → kopioi tunnus.
-2. Avaa **http://jarippeltola.com/kojelauta/** (huom. `http`, ei `https`) ja paina Kamerat-palstan **⚙**:
-   - Osoite: `http://homeassistant.local`
-   - Tunnus: liitä kopioimasi tunnus
-3. Jos Chrome kysyy lupaa käyttää paikallisverkon laitteita, valitse **Salli**.
+1. HA:ssa: oma profiili → **Suojaus** → **Pitkäikäiset käyttöoikeustunnukset** → **Luo token**.
+2. Avaa **https://jarippeltola.com/kojelauta/** ja paina Kamerat-palstan **⚙**:
+   - Osoite: `https://ha.jarippeltola.com`
+   - Tunnus: liitä token
+3. Tallenna.
 
-Tunnus tallentuu vain tämän selaimen muistiin, ei GitHubiin. "Unohda" poistaa sen.
-
-**Rajoitukset:** toimii vain kotiverkossa, ja sivu pitää avata `http://`-osoitteella, koska
-HA:lla ei ole https-osoitetta (selain ei salli https-sivun yhdistää http-osoitteeseen).
-Siksi GitHubin Pagesissa *Enforce HTTPS* jätetään pois päältä. Jos kamerat halutaan näkyviin
-myös kodin ulkopuolelta, HA tarvitsee https-osoitteen, esim. Cloudflare Tunnel
-(`ha.jarippeltola.com`, HA-lisäosa *Cloudflared*), ja silloin osoitteeksi vaihdetaan se.
+Token tallentuu vain kyseisen selaimen muistiin, ei GitHubiin. Jokaiseen selaimeen/laitteeseen
+syötetään asetukset kerran. "Unohda" poistaa ne. Kamerat toimivat myös kodin ulkopuolella.
