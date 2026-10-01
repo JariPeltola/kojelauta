@@ -135,8 +135,8 @@
       <button type="button" id="cams-cfg" title="Kameroiden asetukset">⚙</button></h2>
     <div class="err" id="cams-err"></div>
     <form id="cams-form" hidden>
-      <label>Home Assistantin osoite (https)
-        <input name="url" type="url" placeholder="https://ha.jarippeltola.com" required></label>
+      <label>Home Assistantin osoite
+        <input name="url" type="url" placeholder="http://homeassistant.local" required></label>
       <label>Pitkäikäinen tunnus (long-lived access token)
         <input name="token" type="password" autocomplete="off" required></label>
       <label>Kamerat (tyhjä = kaikki), pilkuilla erotettuna
@@ -478,19 +478,53 @@ const camEls = {
 let camCfg = null, cams = [], camTimer = null, camBig = null;
 try { camCfg = JSON.parse(localStorage.getItem(CAM_KEY)); } catch (e) {}
 
+// Yhteys HA:han websocketilla: se ei tarvitse HA:n CORS-asetuksia. Kuvat ladataan
+// HA:n allekirjoittamilla, hetken voimassa olevilla linkeillä tavallisina <img>-kuvina.
 const haUrl = path => camCfg.url.replace(/\/+$/, "") + path;
-async function haFetch(path) {
-  let r;
-  try {
-    r = await fetch(haUrl(path), { headers: { Authorization: "Bearer " + camCfg.token }, cache: "no-store" });
-  } catch (e) {
+let haWs = null, haSeq = 0;
+const haWait = new Map();
+function haClose() {
+  if (haWs) { haWs.onclose = null; haWs.close(); }
+  haWs = null;
+  haWait.forEach(w => w.reject(new Error("yhteys katkesi"))); haWait.clear();
+}
+function haConnect() {
+  haClose();
+  return new Promise((resolve, reject) => {
     if (location.protocol === "https:" && camCfg.url.startsWith("http:"))
-      throw new Error("selain estää http-osoitteen https-sivulta, HA tarvitsee https-osoitteen");
-    throw new Error("ei yhteyttä Home Assistantiin (onko https ja cors_allowed_origins kunnossa?)");
-  }
-  if (r.status === 401) throw new Error("tunnus ei kelpaa (401)");
-  if (!r.ok) throw new Error(r.status + " " + r.statusText);
-  return r;
+      return reject(new Error("https-sivu ei saa yhdistää http-osoitteeseen; avaa kojelauta http://-osoitteella"));
+    let ws;
+    try { ws = new WebSocket(haUrl("/api/websocket").replace(/^http/, "ws")); }
+    catch (e) { return reject(new Error("osoite ei kelpaa")); }
+    const fail = () => reject(new Error("ei yhteyttä Home Assistantiin (oletko kotiverkossa? salli Chromen kysymä paikallisverkon käyttö)"));
+    ws.onerror = fail;
+    ws.onclose = fail;
+    ws.onmessage = ev => {
+      const m = JSON.parse(ev.data);
+      if (m.type === "auth_required") ws.send(JSON.stringify({ type: "auth", access_token: camCfg.token }));
+      else if (m.type === "auth_invalid") { ws.onclose = null; ws.close(); reject(new Error("tunnus ei kelpaa")); }
+      else if (m.type === "auth_ok") {
+        haWs = ws;
+        ws.onclose = () => { haWs = null; haWait.forEach(w => w.reject(new Error("yhteys katkesi"))); haWait.clear(); };
+        ws.onmessage = ev2 => {
+          const r = JSON.parse(ev2.data), w = haWait.get(r.id);
+          if (!w) return;
+          haWait.delete(r.id);
+          r.success ? w.resolve(r.result) : w.reject(new Error(r.error?.message || "virhe"));
+        };
+        resolve();
+      }
+    };
+  });
+}
+async function haCall(msg) {
+  if (!haWs) await haConnect();
+  const id = ++haSeq;
+  return new Promise((resolve, reject) => {
+    haWait.set(id, { resolve, reject });
+    haWs.send(JSON.stringify({ id, ...msg }));
+    setTimeout(() => { if (haWait.delete(id)) reject(new Error("ei vastausta")); }, 15000);
+  });
 }
 
 function camForm(show) {
@@ -504,12 +538,12 @@ function camForm(show) {
 
 async function startCams() {
   clearInterval(camTimer); camTimer = null;
-  cams.forEach(c => c.url && URL.revokeObjectURL(c.url));
+  haClose();
   cams = []; camEls.grid.innerHTML = ""; camEls.err.textContent = ""; camEls.info.textContent = "";
   if (!camCfg) { camEls.info.textContent = "ei asetettu"; camForm(true); return; }
   camForm(false);
   try {
-    const states = await (await haFetch("/api/states")).json();
+    const states = await haCall({ type: "get_states" });
     const want = camCfg.ids || [];
     const found = states.filter(s => s.entity_id.startsWith("camera.") &&
                                      (!want.length || want.includes(s.entity_id)));
@@ -539,19 +573,25 @@ async function refreshCam(cam) {
   if (cam.busy) return;               // edellinen kuva vielä tulossa
   cam.busy = true;
   try {
-    const blob = await (await haFetch(`/api/camera_proxy/${cam.id}?t=${Date.now()}`)).blob();
-    const old = cam.url;
-    cam.url = URL.createObjectURL(blob);
-    cam.img.src = cam.url; cam.img.hidden = false; cam.msg.hidden = true;
-    if (camBig === cam) camEls.big.querySelector("img").src = cam.url;
-    if (old) setTimeout(() => URL.revokeObjectURL(old), 1000);
+    const signed = await haCall({ type: "auth/sign_path", path: `/api/camera_proxy/${cam.id}`, expires: 60 });
+    const url = haUrl(signed.path);
+    await new Promise((ok, bad) => {  // ladataan ensin taustalla, ettei kuva välähdä
+      const im = new Image();
+      im.onload = ok; im.onerror = () => bad(new Error("kamera ei antanut kuvaa"));
+      im.src = url;
+    });
+    cam.url = url;
+    cam.img.src = url; cam.img.hidden = false; cam.msg.hidden = true;
+    if (camBig === cam) camEls.big.querySelector("img").src = url;
     cam.ok = Date.now();
     cam.time.textContent = new Date(cam.ok).toLocaleTimeString("fi-FI");
     cam.fig.classList.remove("stale");
     cam.img.title = "";
+    camEls.err.textContent = "";
   } catch (e) {
     if (!cam.ok) { cam.msg.textContent = e.message; cam.msg.hidden = false; }
     cam.img.title = "Viimeisin haku epäonnistui: " + e.message;
+    if (!haWs) camEls.err.textContent = "Kamerat: " + e.message;
   } finally { cam.busy = false; }
 }
 
