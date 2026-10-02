@@ -4,7 +4,7 @@ Henkilökohtainen kojelauta: uutisotsikot (Yle, Iltalehti, Ilta-Sanomat, Verkkou
 pörssisähkön hinta (Nord Pool, FI, sis. alv 25,5 %), Lahden sää seuraaville 24 tunnille,
 ja rahastot.
 
-Sivun jako: uutiset 55 % · tilastot 45 %.
+Sivun jako: uutiset 60 % · tilastot 40 %.
 
 Valvontakamerat ovat erillisellä, kirjautumisen takana olevalla sivulla
 **https://jarippeltola.com/valvomo/** (repo `jaripeltola.github.io`, kansio `valvomo/`).
