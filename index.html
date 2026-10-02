@@ -19,7 +19,8 @@
            padding: 14px 20px 6px; }
   header h1 { font-size: 20px; margin: 0; font-weight: 650; }
   #clock { color: var(--muted); font-variant-numeric: tabular-nums; }
-  main { display: grid; grid-template-columns: 4fr 3fr 3fr; gap: 16px;
+  header a { color: var(--link); text-decoration: none; }
+  main { display: grid; grid-template-columns: 11fr 9fr; gap: 16px;
          padding: 8px 20px 20px; height: calc(100vh - 52px); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
           padding: 12px 16px; min-height: 0; min-width: 0; }
@@ -51,37 +52,6 @@
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
               margin-right: 5px; vertical-align: -1px; }
   .err { color: #b91c1c; font-size: 12px; }
-  /* kamerat */
-  #cams { display: flex; flex-direction: column; }
-  #cams h2 button { margin-left: auto; border: 0; background: none; cursor: pointer;
-                    font-size: 16px; color: var(--muted); padding: 0 2px; }
-  #cams h2 button:hover { color: var(--text); }
-  #cams-grid { flex: 1; overflow-y: auto; display: grid; gap: 10px; align-content: start;
-               grid-template-columns: 1fr; }
-  .cam { position: relative; margin: 0; border-radius: 8px; overflow: hidden;
-         background: #111827; aspect-ratio: 16 / 9; cursor: zoom-in; }
-  .cam img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .cam figcaption { position: absolute; left: 0; right: 0; bottom: 0; display: flex;
-                    justify-content: space-between; gap: 8px; padding: 14px 8px 5px;
-                    font-size: 12px; color: #fff;
-                    background: linear-gradient(transparent, rgba(0,0,0,.7)); }
-  .cam figcaption time { font-variant-numeric: tabular-nums; opacity: .85; }
-  .cam.stale figcaption time { color: #fca5a5; opacity: 1; }
-  .cam .msg { position: absolute; inset: 0; display: grid; place-items: center;
-              color: #9ca3af; font-size: 12px; text-align: center; padding: 10px; }
-  #cams-form { display: grid; gap: 8px; font-size: 13px; }
-  #cams-form label { display: grid; gap: 3px; color: var(--muted); }
-  #cams-form input { font: inherit; color: var(--text); padding: 6px 8px;
-                     border: 1px solid var(--line); border-radius: 6px; }
-  #cams-form .row { display: flex; gap: 8px; }
-  #cams-form button { font: inherit; padding: 6px 12px; border-radius: 6px; cursor: pointer;
-                      border: 1px solid var(--line); background: var(--card); }
-  #cams-form button[type=submit] { background: var(--link); color: #fff; border-color: var(--link); }
-  #cams-form p { margin: 0; color: var(--muted); font-size: 12px; }
-  #cam-big { padding: 0; border: 0; background: #000; max-width: 96vw; max-height: 94vh; }
-  #cam-big::backdrop { background: rgba(0,0,0,.8); }
-  #cam-big img { display: block; max-width: 96vw; max-height: 90vh; cursor: zoom-out; }
-  #cam-big p { margin: 0; color: #fff; font-size: 13px; padding: 6px 10px; }
   @media (max-width: 900px) {
     main { grid-template-columns: 1fr; height: auto; }
     .charts { grid-template-rows: auto auto auto; }
@@ -93,7 +63,7 @@
 <body>
 <header>
   <h1>Kojelauta</h1>
-  <span id="clock"></span>
+  <span><span id="clock"></span> · <a href="/valvomo/">Valvomo</a></span>
 </header>
 <main>
   <section class="card" id="news">
@@ -130,30 +100,7 @@
       <div class="legend" id="funds-legend"></div>
     </section>
   </div>
-  <section class="card" id="cams">
-    <h2>Kamerat <small id="cams-info"></small>
-      <button type="button" id="cams-cfg" title="Kameroiden asetukset">⚙</button></h2>
-    <div class="err" id="cams-err"></div>
-    <form id="cams-form" hidden>
-      <label>Home Assistantin osoite
-        <input name="url" type="url" placeholder="https://ha.jarippeltola.com" required></label>
-      <label>Pitkäikäinen tunnus (long-lived access token)
-        <input name="token" type="password" autocomplete="off" required></label>
-      <label>Kamerat (tyhjä = kaikki), pilkuilla erotettuna
-        <input name="ids" placeholder="camera.etupiha, camera.piha"></label>
-      <label>Päivitysväli, sekuntia
-        <input name="every" type="number" min="2" max="300" value="5"></label>
-      <p>Tiedot tallentuvat vain tämän selaimen muistiin, eivät GitHubiin.</p>
-      <div class="row">
-        <button type="submit">Tallenna</button>
-        <button type="button" id="cams-cancel">Peruuta</button>
-        <button type="button" id="cams-forget" style="margin-left:auto">Unohda</button>
-      </div>
-    </form>
-    <div id="cams-grid"></div>
-  </section>
 </main>
-<dialog id="cam-big"><img alt=""><p></p></dialog>
 
 <script>
 const REFRESH_MS = 10 * 60 * 1000;          // päivitys 10 minuutin välein
@@ -466,174 +413,6 @@ async function loadFunds() {
   } catch (e) { err.textContent = "Rahastotietojen haku epäonnistui: " + e.message; }
 }
 
-// ---------- kamerat (Home Assistant) ----------
-// HA:n osoite ja tunnus syötetään ⚙-asetuksista ja tallennetaan vain selaimen
-// localStorageen, joten ne eivät koskaan päädy julkiseen repoon.
-const CAM_KEY = "kojelauta-ha";
-const camEls = {
-  grid: document.getElementById("cams-grid"), err: document.getElementById("cams-err"),
-  info: document.getElementById("cams-info"), form: document.getElementById("cams-form"),
-  big: document.getElementById("cam-big"),
-};
-let camCfg = null, cams = [], camTimer = null, camBig = null;
-try { camCfg = JSON.parse(localStorage.getItem(CAM_KEY)); } catch (e) {}
-
-// Yhteys HA:han websocketilla: se ei tarvitse HA:n CORS-asetuksia. Kuvat ladataan
-// HA:n allekirjoittamilla, hetken voimassa olevilla linkeillä tavallisina <img>-kuvina.
-const haUrl = path => camCfg.url.replace(/\/+$/, "") + path;
-let haWs = null, haSeq = 0;
-const haWait = new Map();
-function haClose() {
-  if (haWs) { haWs.onclose = null; haWs.close(); }
-  haWs = null;
-  haWait.forEach(w => w.reject(new Error("yhteys katkesi"))); haWait.clear();
-}
-function haConnect() {
-  haClose();
-  return new Promise((resolve, reject) => {
-    if (location.protocol === "https:" && camCfg.url.startsWith("http:"))
-      return reject(new Error("https-sivu ei saa yhdistää http-osoitteeseen; avaa kojelauta http://-osoitteella"));
-    let ws;
-    try { ws = new WebSocket(haUrl("/api/websocket").replace(/^http/, "ws")); }
-    catch (e) { return reject(new Error("osoite ei kelpaa")); }
-    const fail = () => reject(new Error("ei yhteyttä Home Assistantiin (oletko kotiverkossa? salli Chromen kysymä paikallisverkon käyttö)"));
-    ws.onerror = fail;
-    ws.onclose = fail;
-    ws.onmessage = ev => {
-      const m = JSON.parse(ev.data);
-      if (m.type === "auth_required") ws.send(JSON.stringify({ type: "auth", access_token: camCfg.token }));
-      else if (m.type === "auth_invalid") { ws.onclose = null; ws.close(); reject(new Error("tunnus ei kelpaa")); }
-      else if (m.type === "auth_ok") {
-        haWs = ws;
-        ws.onclose = () => { haWs = null; haWait.forEach(w => w.reject(new Error("yhteys katkesi"))); haWait.clear(); };
-        ws.onmessage = ev2 => {
-          const r = JSON.parse(ev2.data), w = haWait.get(r.id);
-          if (!w) return;
-          haWait.delete(r.id);
-          r.success ? w.resolve(r.result) : w.reject(new Error(r.error?.message || "virhe"));
-        };
-        resolve();
-      }
-    };
-  });
-}
-async function haCall(msg) {
-  if (!haWs) await haConnect();
-  const id = ++haSeq;
-  return new Promise((resolve, reject) => {
-    haWait.set(id, { resolve, reject });
-    haWs.send(JSON.stringify({ id, ...msg }));
-    setTimeout(() => { if (haWait.delete(id)) reject(new Error("ei vastausta")); }, 15000);
-  });
-}
-
-function camForm(show) {
-  camEls.form.hidden = !show;
-  camEls.grid.hidden = show;
-  if (!show) return;
-  const f = camEls.form.elements;
-  f.url.value = camCfg?.url || ""; f.token.value = camCfg?.token || "";
-  f.ids.value = (camCfg?.ids || []).join(", "); f.every.value = camCfg?.every || 5;
-}
-
-async function startCams() {
-  clearInterval(camTimer); camTimer = null;
-  haClose();
-  cams = []; camEls.grid.innerHTML = ""; camEls.err.textContent = ""; camEls.info.textContent = "";
-  if (!camCfg) { camEls.info.textContent = "ei asetettu"; camForm(true); return; }
-  camForm(false);
-  try {
-    const states = await haCall({ type: "get_states" });
-    const want = camCfg.ids || [];
-    const found = states.filter(s => s.entity_id.startsWith("camera.") &&
-                                     (!want.length || want.includes(s.entity_id)));
-    if (want.length) found.sort((a, b) => want.indexOf(a.entity_id) - want.indexOf(b.entity_id));
-    const missing = want.filter(id => !found.some(s => s.entity_id === id));
-    if (!found.length) throw new Error("Home Assistantista ei löytynyt kameroita");
-    cams = found.map(s => {
-      const fig = document.createElement("figure");
-      fig.className = "cam";
-      fig.innerHTML = `<div class="msg">ladataan…</div><img alt="" hidden>` +
-        `<figcaption><span>${esc(s.attributes.friendly_name || s.entity_id)}</span><time></time></figcaption>`;
-      camEls.grid.append(fig);
-      const cam = { id: s.entity_id, name: s.attributes.friendly_name || s.entity_id,
-                    fig, img: fig.querySelector("img"), msg: fig.querySelector(".msg"),
-                    time: fig.querySelector("time"), url: null, ok: 0, busy: false };
-      fig.addEventListener("click", () => openBig(cam));
-      return cam;
-    });
-    camEls.info.textContent = `${cams.length} kpl · ${camCfg.every || 5} s välein`;
-    if (missing.length) camEls.err.textContent = "Ei löytynyt: " + missing.join(", ");
-    refreshCams();
-    camTimer = setInterval(refreshCams, (camCfg.every || 5) * 1000);
-  } catch (e) { camEls.err.textContent = "Kamerat: " + e.message; }
-}
-
-async function refreshCam(cam) {
-  if (cam.busy) return;               // edellinen kuva vielä tulossa
-  cam.busy = true;
-  try {
-    const signed = await haCall({ type: "auth/sign_path", path: `/api/camera_proxy/${cam.id}`, expires: 60 });
-    const url = haUrl(signed.path);
-    await new Promise((ok, bad) => {  // ladataan ensin taustalla, ettei kuva välähdä
-      const im = new Image();
-      im.onload = ok; im.onerror = () => bad(new Error("kamera ei antanut kuvaa"));
-      im.src = url;
-    });
-    cam.url = url;
-    cam.img.src = url; cam.img.hidden = false; cam.msg.hidden = true;
-    if (camBig === cam) camEls.big.querySelector("img").src = url;
-    cam.ok = Date.now();
-    cam.time.textContent = new Date(cam.ok).toLocaleTimeString("fi-FI");
-    cam.fig.classList.remove("stale");
-    cam.img.title = "";
-    camEls.err.textContent = "";
-  } catch (e) {
-    if (!cam.ok) { cam.msg.textContent = e.message; cam.msg.hidden = false; }
-    cam.img.title = "Viimeisin haku epäonnistui: " + e.message;
-    if (!haWs) camEls.err.textContent = "Kamerat: " + e.message;
-  } finally { cam.busy = false; }
-}
-
-function refreshCams() {
-  if (document.hidden) return;        // ei haeta kuvia taustalla olevaan välilehteen
-  const every = (camCfg?.every || 5) * 1000;
-  for (const cam of cams) {
-    refreshCam(cam);
-    if (cam.ok) cam.fig.classList.toggle("stale", Date.now() - cam.ok > 3 * every + 2000);
-  }
-}
-
-function openBig(cam) {
-  if (!cam.url) return;
-  camBig = cam;
-  camEls.big.querySelector("img").src = cam.url;
-  camEls.big.querySelector("p").textContent = cam.name;
-  camEls.big.showModal();
-}
-camEls.big.addEventListener("click", () => camEls.big.close());
-camEls.big.addEventListener("close", () => { camBig = null; });
-
-document.getElementById("cams-cfg").addEventListener("click", () => camForm(camEls.form.hidden));
-document.getElementById("cams-cancel").addEventListener("click", () => camCfg ? camForm(false) : null);
-document.getElementById("cams-forget").addEventListener("click", () => {
-  try { localStorage.removeItem(CAM_KEY); } catch (e) {}
-  camCfg = null; startCams();
-});
-camEls.form.addEventListener("submit", ev => {
-  ev.preventDefault();
-  const f = camEls.form.elements;
-  camCfg = {
-    url: f.url.value.trim(), token: f.token.value.trim(),
-    ids: f.ids.value.split(/[\s,]+/).filter(Boolean),
-    every: Math.min(300, Math.max(2, +f.every.value || 5)),
-  };
-  try { localStorage.setItem(CAM_KEY, JSON.stringify(camCfg)); }
-  catch (e) { camEls.err.textContent = "Selain ei salli tallennusta, asetukset unohtuvat sivun latauksessa."; }
-  startCams();
-});
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshCams(); });
-
 // ---------- ajastus ----------
 function tick() {
   document.getElementById("clock").textContent =
@@ -647,23 +426,6 @@ new ResizeObserver(() => { renderPrice(); renderWeather(); renderFunds(); })
 tick(); setInterval(tick, 15000);
 setInterval(renderPrice, 60000);   // "nyt"-merkki liikkuu minuutin välein
 refreshAll(); setInterval(refreshAll, REFRESH_MS);
-// Julkiset kamerakuvat: Home Assistant tallentaa ne 5 s välein
-const PUBLIC_CAMS = [["Etupiha", "etupiha"], ["Etuovi", "etuovi"], ["Takapiha", "takapiha"]];
-const PUB_BASE = "https://ha.jarippeltola.com/local/kojelauta/";
-camEls.grid.innerHTML = PUBLIC_CAMS.map(([n, f]) =>
-  `<figure class="cam"><img alt="${n}" data-f="${f}"><figcaption><span>${n}</span><time></time></figcaption></figure>`).join("");
-function refreshPub() {
-  if (document.hidden) return;
-  camEls.grid.querySelectorAll("img").forEach(img => {
-    const im = new Image();
-    im.onload = () => {
-      img.src = im.src;
-      img.nextElementSibling.querySelector("time").textContent = new Date().toLocaleTimeString("fi-FI");
-    };
-    im.src = PUB_BASE + img.dataset.f + ".jpg?t=" + Date.now();
-  });
-}
-refreshPub(); setInterval(refreshPub, 5000);
 </script>
 </body>
 </html>
