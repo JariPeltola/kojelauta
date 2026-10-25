@@ -22,7 +22,8 @@ try:
 except Exception:  # Windowsissa tzdata voi puuttua → käytetään koneen omaa aikavyöhykettä
     TZ = datetime.now().astimezone().tzinfo
 VAT = 0.255            # Suomen yleinen arvonlisävero (25,5 %)
-MAX_NEWS = 120
+MAX_NEWS = 300
+MAX_NEWS_AGE = 24 * 3600   # yli vuorokauden vanhat uutiset pois
 
 # Jokaiselle lähteelle voi antaa useita osoitteita: ensimmäinen toimiva käytetään.
 FEEDS = {
@@ -114,8 +115,11 @@ def get_news():
                 last_err = e
         if last_err:
             errors.append(f"{name}: {last_err}")
+    cutoff = time.time() - MAX_NEWS_AGE
     seen, unique = set(), []
     for it in sorted(items, key=lambda x: x["ts"], reverse=True):
+        if it["ts"] < cutoff:
+            break  # järjestetty uusimmasta vanhimpaan → loput ovat vielä vanhempia
         if it["link"] in seen:
             continue
         seen.add(it["link"])

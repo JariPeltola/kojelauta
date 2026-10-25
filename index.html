@@ -124,6 +124,10 @@
 
 <script>
 const REFRESH_MS = 10 * 60 * 1000;          // päivitys 10 minuutin välein
+const NEWS_MAX_AGE_MS = 24 * 3600 * 1000;    // yli vuorokauden vanhat uutiset pois
+// Uutisten välityspalvelin (Cloudflare Worker, ks. worker/uutiset.js ja README).
+// Tyhjänä uutiset luetaan GitHub Actionsin tiedostosta data/news.json.
+const NEWS_API = "";
 const SRC = {
   "Yle": ["Yle", "var(--yle)"],
   "Iltalehti": ["IL", "var(--il)"],
@@ -260,12 +264,32 @@ function drawChart(box, spec) {
 }
 
 // ---------- uutiset ----------
+// Ensisijaisesti välityspalvelimelta (aina tuore), varalla GitHub Actionsin tiedosto
+async function getNews() {
+  if (NEWS_API) {
+    try {
+      const r = await fetch(`${NEWS_API}?t=${Date.now()}`, { cache: "no-store" });
+      if (!r.ok) throw new Error(r.status + " " + r.statusText);
+      const j = await r.json();
+      if (!j.items) throw new Error("virheellinen vastaus");
+      return j;
+    } catch (e) {
+      console.warn("Uutispalvelin ei vastannut, käytetään data/news.json:", e);
+    }
+  }
+  return getData("news");
+}
+
+let newsLoadedAt = 0;
 async function loadNews() {
   const err = document.getElementById("news-err");
   try {
-    const data = await getData("news");
+    const data = await getNews();
+    newsLoadedAt = Date.now();
+    const cutoff = (Date.now() - NEWS_MAX_AGE_MS) / 1000;
+    const items = data.items.filter(it => it.ts && it.ts >= cutoff);
     let lastDay = new Date().toDateString(), html = "";
-    for (const it of data.items) {
+    for (const it of items) {
       const d = new Date(it.ts * 1000);
       if (it.ts && d.toDateString() !== lastDay) {
         lastDay = d.toDateString();
@@ -282,8 +306,8 @@ async function loadNews() {
     const age = (Date.now() - gen) / 60000;
     const upd = document.getElementById("news-updated");
     upd.textContent = "haettu " + fmtTime(gen);
-    upd.style.color = age > 45 ? "#b91c1c" : "";
-    upd.title = age > 45 ? "GitHubin ajastettu päivitys on myöhässä" : "";
+    upd.style.color = age > 25 ? "#b91c1c" : "";
+    upd.title = age > 25 ? "Uutistiedot ovat yli 25 minuuttia vanhoja" : "";
   } catch (e) { err.textContent = "Uutisten haku epäonnistui: " + e.message; }
 }
 
@@ -446,6 +470,10 @@ new ResizeObserver(() => { renderPrice(); renderWeather(); renderFunds(); })
 tick(); setInterval(tick, 15000);
 setInterval(renderPrice, 60000);   // "nyt"-merkki liikkuu minuutin välein
 refreshAll(); setInterval(refreshAll, REFRESH_MS);
+// taustalla olleen välilehden ajastimet voivat jäädä jälkeen: haetaan heti, kun sivu tulee näkyviin
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - newsLoadedAt > REFRESH_MS) refreshAll();
+});
 </script>
 </body>
 </html>
