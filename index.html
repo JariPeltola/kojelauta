@@ -127,7 +127,7 @@ const REFRESH_MS = 10 * 60 * 1000;          // päivitys 10 minuutin välein
 const NEWS_MAX_AGE_MS = 24 * 3600 * 1000;    // yli vuorokauden vanhat uutiset pois
 // Uutisten välityspalvelin (Cloudflare Worker, ks. worker/uutiset.js ja README).
 // Tyhjänä uutiset luetaan GitHub Actionsin tiedostosta data/news.json.
-const NEWS_API = "";
+const NEWS_API = "https://kojelauta-uutiset.jari-p-peltola.workers.dev/";
 const SRC = {
   "Yle": ["Yle", "var(--yle)"],
   "Iltalehti": ["IL", "var(--il)"],

@@ -46,7 +46,8 @@ Käyttöönotto (kerran, ilmaisella Cloudflare-tilillä):
    (Hello World -pohja), nimeksi esim. `kojelauta-uutiset` → **Deploy**.
 2. **Edit code** → korvaa koodi tiedoston `worker/uutiset.js` sisällöllä → **Deploy**.
 3. Kopioi Workerin osoite, esim. `https://kojelauta-uutiset.<tunnus>.workers.dev`,
-   ja kirjoita se `index.html`:n riville `const NEWS_API = "";`.
+   ja kirjoita se `index.html`:n riville `const NEWS_API = ...`.
+   Käytössä: `https://kojelauta-uutiset.jari-p-peltola.workers.dev/`
 
 Uutisten otsikkorivin "haettu"-aika muuttuu punaiseksi, jos tiedot ovat yli
 25 minuuttia vanhoja (eli Worker ei vastaa ja ollaan GitHubin varatiedoston varassa).
